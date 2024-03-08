@@ -45,3 +45,4 @@ for i in range(1, len(df_junto)):
 suma_surplus = round(df_junto['surplus'].sum())
 
 print("Suma total de energía despericiada o surplus energy: {} Wh".format(suma_surplus))
+df_junto.to_csv('C:\\Users\\Usuario\\Desktop\\Mi ingeniería e. e\\Contenidos por cursos\\Cuarto curso\\Octavo semestre (BOLIVIA)\\RAMP\\excels\\Outputs_balance_surplus\\output_balance_surplus_t1.csv', index=False)
