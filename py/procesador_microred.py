@@ -96,9 +96,8 @@ def calc_insatisf(df, n):
 
 def calc_carga_surp(df, i):
     if i == 0:
-        df.at[i, 'carga_bat'] = df.at[i, 'gen'] - df.at[i, 'Demanda']
-        df.at[i, 'surplus'] = max(0, df.at[i, 'carga_bat'])
-        df.at[i, 'carga_bat'] = max(0, df.at[i, 'carga_bat'])  # Ensure no negative battery charge
+        df.at[i, 'carga_bat'] = max(0, df.at[i, 'gen'] - df.at[i, 'Demanda'])  # Ensure no negative battery charge
+        df.at[i, 'surplus'] = 0
         df.at[i, 'energia_insatisf_conec'] = max(0, df.at[i, 'Demanda'] - df.at[i, 'gen'])
         df.at[i, 'demanda_suplida'] = min(df.at[i, 'Demanda'], df.at[i, 'gen'])
     else:
@@ -111,17 +110,20 @@ def calc_carga_surp(df, i):
         energia_disponible = df.at[i, 'gen'] + carga_bat_actual
         if energia_disponible >= df.at[i, 'Demanda']:
             df.at[i, 'demanda_suplida'] = df.at[i, 'Demanda']
-            df.at[i, 'carga_bat'] = carga_bat_actual - (df.at[i, 'Demanda'] - df.at[i, 'gen'])
+            df.at[i, 'carga_bat'] = round(carga_bat_actual - (df.at[i, 'Demanda'] - df.at[i, 'gen']))
             df.at[i, 'carga_bat'] = max(0, min(df.at[i, 'carga_bat'], df.at[i, 'capbat']))
-            df.at[i, 'surplus'] = max(0, energia_disponible - df.at[i, 'Demanda'])
+            df.at[i, 'surplus'] = max(0, df.at[i, 'gen'] - df.at[i, 'Demanda']) if df.at[i, 'cbat_porc'] == 100 else 0
         else:
             df.at[i, 'demanda_suplida'] = energia_disponible
-            df.at[i, 'carga_bat'] = 0
+            df.at[i, 'carga_bat'] = max(0, min(carga_bat_actual - df.at[i, 'Demanda'] + df.at[i, 'gen'], df.at[i, 'capbat']))
             df.at[i, 'surplus'] = 0
         
         df.at[i, 'energia_insatisf_conec'] = max(0, df.at[i, 'Demanda'] - df.at[i, 'demanda_suplida'])
-        
+        if df.at[i, 'Protocolo'] == 'Nocturno':
+            df.at[i, 'surplus'] = 0
+        df.at[i,'cbat_porc']=(df.at[i, 'carga_bat']/df.at[i, 'capbat'])*100
     return df
+
 
 
 def transmision(df1, df2):
@@ -145,8 +147,8 @@ def transmision(df1, df2):
 
         if df1.at[i, 'Autenv'] and df2.at[i, 'Autrecv']:
             if df1.at[i, 'Protocolo'] == 'Diurno':
-                potenv = df1.at[i, 'surplus']
-                potrec = potenv * efs
+                potenv =round( df1.at[i, 'surplus'])
+                potrec = round(potenv * efs)
                 df1.at[i, 'pext'] = -potenv
                 df2.at[i, 'pext'] = potrec
                 demanda_restante = df2.at[i, 'Demanda'] - df2.at[i, 'demanda_suplida']
@@ -154,9 +156,10 @@ def transmision(df1, df2):
                     df2.at[i, 'demanda_suplida'] += min(potrec, demanda_restante)
                     potrec -= min(potrec, demanda_restante)
                 df2.at[i, 'carga_bat'] = min(df2.at[i, 'carga_bat'] + potrec, df2.at[i, 'capbat'])
+                df2.at[i,'cbat_porc']=(df2.at[i, 'carga_bat']/df2.at[i, 'capbat'])*100
             else:
-                potenv = df2.at[i, 'Demanda'] / efs
-                potrec = potenv * efs
+                potenv = (df2.at[i, 'Demanda']/efs)
+                potrec = round(potenv * efs)
                 df1.at[i, 'pext'] = -potenv
                 df2.at[i, 'pext'] = potrec
 
@@ -176,8 +179,10 @@ def transmision(df1, df2):
                     df1.at[i, 'demanda_suplida'] += min(potrec, demanda_restante)
                     potrec -= min(potrec, demanda_restante)
                 df1.at[i, 'carga_bat'] = min(df1.at[i, 'carga_bat'] + potrec, df1.at[i, 'capbat'])
+                df1.at[i,'cbat_porc']=(df1.at[i, 'carga_bat']/df1.at[i, 'capbat'])*100
+
             else:
-                potenv = df1.at[i, 'Demanda']
+                potenv = df1.at[i, 'Demanda']/efs
                 potrec = potenv * efs
                 df2.at[i, 'carga_bat'] -= potenv
                 demanda_restante = df1.at[i, 'Demanda'] - df1.at[i, 'demanda_suplida']
@@ -187,7 +192,7 @@ def transmision(df1, df2):
         else:
             df1.at[i, 'pext'] = 0
             df2.at[i, 'pext'] = 0
-        print('Registro {} de {} realizado'.format(i,tam))
+      #  print('Registro {} de {} realizado'.format(i,tam))
     print(df1.head())
     print(df2.head())
     return df1, df2
@@ -291,7 +296,8 @@ df_list = []
 for file in files:
     file_path = os.path.join(directory, file)
     df = pd.read_csv(file_path)
-
+    
+    df['Demanda']=round(df['Demanda'])
     # Convertir las columnas relevantes a numéricas, manejando errores
     df['gen'] = pd.to_numeric(df['gen'], errors='coerce').fillna(0)
     df['Demanda'] = pd.to_numeric(df['Demanda'], errors='coerce').fillna(0)
@@ -302,10 +308,11 @@ for file in files:
             df['capbat'] = max(df['carga_bat'])
         else:
             df['capbat'] = 89
-        df['cbat_porc'] = (df['carga_bat'] / df['capbat']) * 100
+        df['cbat_porc'] = round((df['carga_bat'] / df['capbat']) * 100)
     else:
         df['capbat'] = 89
         df['cbat_porc'] = 0
+        # Verificar y arreglar valores NaN en la columna 'surplus'
 
     df.drop(columns=[
         'num_pan20', 'caida_tension', 'caida_porc', 'precio_cables', 
@@ -313,8 +320,10 @@ for file in files:
         'surplus', 'carga_bat'
     ], inplace=True, errors='ignore')
     
+
     df = protocolo(df)
     df_list.append(df)
+
     """
 df_list2 = []
 
@@ -531,8 +540,8 @@ calc_insatisf(df1, 1)
 calc_insatisf(df2, 2)
 calc_insatisf(df3, 3)
 """
-num1 = 7
-num2 = 8  
+num1 = 2
+num2 = 15
 
 # Definir los DataFrames para los nodos
 #df0 = df_list[num1]
